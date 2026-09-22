@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    console.log('%c[NCDR Rain Forecast Extension] 擴充功能啟動成功！v1.2.0', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
+    console.log('%c[NCDR Rain Forecast Extension] 擴充功能啟動成功！v1.3.0', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
 
     let latestRun = null;
     let hoverTimer = null;
@@ -35,117 +35,6 @@
     `;
     document.body.appendChild(tooltip);
 
-    const style = document.createElement('style');
-    style.textContent = `
-        #ncdr-status-badge {
-            position: fixed;
-            bottom: 18px;
-            right: 18px;
-            background: linear-gradient(135deg, #1976d2, #0d47a1);
-            color: #ffffff;
-            padding: 7px 14px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-            z-index: 9999999;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            user-select: none;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
-        }
-        #ncdr-status-badge:hover {
-            transform: scale(1.05);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
-        }
-        #ncdr-rain-tooltip {
-            position: fixed;
-            display: none;
-            z-index: 999999999 !important;
-            pointer-events: none;
-            transition: opacity 0.12s ease-out, transform 0.12s ease-out;
-            opacity: 0;
-            transform: scale(0.96);
-        }
-        #ncdr-rain-tooltip.visible {
-            display: block !important;
-            opacity: 1 !important;
-            transform: scale(1) !important;
-        }
-        .ncdr-card {
-            background: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.32), 0 2px 10px rgba(0, 0, 0, 0.15);
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            width: 245px;
-            overflow: hidden;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
-        }
-        .ncdr-header {
-            background: linear-gradient(135deg, #1976d2, #0d47a1);
-            color: #ffffff;
-            padding: 9px 12px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .ncdr-title {
-            font-size: 13px;
-            font-weight: 600;
-            letter-spacing: 0.2px;
-        }
-        .ncdr-badge {
-            font-size: 10px;
-            background: rgba(255, 255, 255, 0.25);
-            padding: 2px 6px;
-            border-radius: 10px;
-            font-weight: 500;
-        }
-        .ncdr-body {
-            position: relative;
-            background: #f8fafc;
-            min-height: 290px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .ncdr-img {
-            width: 100%;
-            height: auto;
-            display: block;
-        }
-        .ncdr-loading {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-            color: #64748b;
-            font-size: 12px;
-            padding: 20px 0;
-        }
-        .ncdr-spinner {
-            width: 24px;
-            height: 24px;
-            border: 3px solid #e2e8f0;
-            border-top: 3px solid #1976d2;
-            border-radius: 50%;
-            animation: ncdr-spin 0.8s linear infinite;
-        }
-        @keyframes ncdr-spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .ncdr-footer {
-            background: #ffffff;
-            padding: 6px 12px;
-            font-size: 10px;
-            color: #94a3b8;
-            border-top: 1px solid #f1f5f9;
-            text-align: right;
-        }
-    `;
-    document.head.appendChild(style);
-
     const cardTitle = document.getElementById('ncdr-card-title');
     const cardBadge = document.getElementById('ncdr-card-badge');
     const cardLoading = document.getElementById('ncdr-card-loading');
@@ -155,7 +44,7 @@
 
     badge.addEventListener('click', function () {
         const testDate = new Date();
-        testDate.setDate(testDate.getDate() + 3);
+        testDate.setDate(testDate.getDate() + 5);
         showForecast(testDate, window.innerWidth - 280, window.innerHeight - 420);
         setTimeout(() => {
             const clickOutside = () => {
@@ -166,24 +55,32 @@
         }, 100);
     });
 
-    function getDefaultRun() {
+    // 產生候選期數列表 (今天、昨天、前天... 避免 404)
+    function getCandidateRuns() {
+        const runs = [];
+        if (latestRun && latestRun.runDate) {
+            runs.push(latestRun.runDate);
+        }
         const now = new Date();
-        const y = now.getFullYear();
-        const m = String(now.getMonth() + 1).padStart(2, '0');
-        const d = String(now.getDate()).padStart(2, '0');
-        return {
-            runMonth: `${y}${m}`,
-            runDate: `${y}${m}${d}00`,
-            baseDateTimestamp: new Date(y, now.getMonth(), now.getDate()).getTime()
-        };
+        for (let i = 0; i <= 4; i++) {
+            const d = new Date(now);
+            d.setDate(d.getDate() - i);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const runStr = `${y}${m}${day}00`;
+            if (!runs.includes(runStr)) runs.push(runStr);
+        }
+        return runs;
     }
 
+    // 透過 background service worker 取得 NCDR 最新發布期數
     function fetchLatestRunDate(callback) {
         const cached = localStorage.getItem('ncdr_latest_run');
         const cachedTime = parseInt(localStorage.getItem('ncdr_cached_time') || '0', 10);
         const now = Date.now();
 
-        if (cached && (now - cachedTime < 3600 * 1000)) {
+        if (cached && (now - cachedTime < 1800 * 1000)) {
             try {
                 latestRun = JSON.parse(cached);
                 if (callback) callback(latestRun);
@@ -191,31 +88,45 @@
             } catch (e) {}
         }
 
-        fetch('https://watch.ncdr.nat.gov.tw/php/list_realtime_date_csv.php?v=CHART_MPAS_45_OPTIMAL&tt=' + now)
-            .then(res => res.text())
-            .then(text => {
-                const parts = text.trim().split(',');
-                if (parts.length >= 2) {
-                    const rawDate = parts[1].trim();
-                    const runDate = rawDate.substr(0, 10);
-                    const runMonth = rawDate.substr(0, 6);
-                    
-                    const year = parseInt(runDate.substr(0, 4), 10);
-                    const month = parseInt(runDate.substr(4, 2), 10) - 1;
-                    const day = parseInt(runDate.substr(6, 2), 10);
-                    const baseDate = new Date(year, month, day);
+        if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
+            chrome.runtime.sendMessage({ action: 'fetchLatestRun' }, (response) => {
+                if (response && response.success && response.text) {
+                    const parts = response.text.trim().split(',');
+                    if (parts.length >= 2) {
+                        const rawDate = parts[1].trim();
+                        const runDate = rawDate.substr(0, 10);
+                        const runMonth = rawDate.substr(0, 6);
+                        const year = parseInt(runDate.substr(0, 4), 10);
+                        const month = parseInt(runDate.substr(4, 2), 10) - 1;
+                        const day = parseInt(runDate.substr(6, 2), 10);
+                        const baseDate = new Date(year, month, day);
 
-                    latestRun = { runMonth, runDate, baseDateTimestamp: baseDate.getTime() };
-                    localStorage.setItem('ncdr_latest_run', JSON.stringify(latestRun));
-                    localStorage.setItem('ncdr_cached_time', now.toString());
-                    console.log('[NCDR Extension] 最新期數更新成功:', latestRun);
-                    if (callback) callback(latestRun);
+                        latestRun = { runMonth, runDate, baseDateTimestamp: baseDate.getTime() };
+                        localStorage.setItem('ncdr_latest_run', JSON.stringify(latestRun));
+                        localStorage.setItem('ncdr_cached_time', now.toString());
+                        console.log('[NCDR Extension] 透過後台取得最新期數:', latestRun);
+                        if (callback) callback(latestRun);
+                        return;
+                    }
                 }
-            })
-            .catch(() => {
-                latestRun = getDefaultRun();
-                if (callback) callback(latestRun);
+                fallbackRun(callback);
             });
+        } else {
+            fallbackRun(callback);
+        }
+    }
+
+    function fallbackRun(callback) {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        latestRun = {
+            runMonth: `${y}${m}`,
+            runDate: `${y}${m}${d}00`,
+            baseDateTimestamp: new Date(y, now.getMonth(), now.getDate()).getTime()
+        };
+        if (callback) callback(latestRun);
     }
 
     fetchLatestRunDate();
@@ -322,15 +233,11 @@
     }
 
     function showForecast(targetDate, mouseX, mouseY) {
-        if (!latestRun) {
-            fetchLatestRunDate(() => showForecast(targetDate, mouseX, mouseY));
-            return;
-        }
-
         const targetYYYYMMDD = formatDateToYYYYMMDD(targetDate);
-        const diffDays = Math.round((targetDate.getTime() - latestRun.baseDateTimestamp) / (86400 * 1000));
+        const baseTimestamp = latestRun ? latestRun.baseDateTimestamp : Date.now();
+        const diffDays = Math.round((targetDate.getTime() - baseTimestamp) / (86400 * 1000));
 
-        if (diffDays < -1 || diffDays > 45) {
+        if (diffDays < -2 || diffDays > 45) {
             hideForecast();
             return;
         }
@@ -338,24 +245,44 @@
         const weekNum = Math.max(1, Math.floor(diffDays / 7) + 1);
         cardTitle.textContent = formatDateDisplay(targetDate);
         cardBadge.textContent = `第 ${weekNum} 週預報`;
-        cardInfo.textContent = `模式發布：${latestRun.runDate.substr(0, 4)}/${latestRun.runDate.substr(4, 2)}/${latestRun.runDate.substr(6, 2)}`;
-
-        const imgUrl = `https://watch.ncdr.nat.gov.tw/00_Wxmap/2F6_MPAS2WRF_45d/${latestRun.runMonth}/${latestRun.runDate}/semw05_qpf_${latestRun.runDate}_${targetYYYYMMDD}.gif`;
 
         cardLoading.style.display = 'flex';
         cardStatus.textContent = '取得雨量圖中...';
         cardImg.style.display = 'none';
 
-        const img = new Image();
-        img.onload = function () {
-            cardImg.src = imgUrl;
-            cardLoading.style.display = 'none';
-            cardImg.style.display = 'block';
-        };
-        img.onerror = function () {
-            cardStatus.textContent = '無此日期之數值模式圖';
-        };
-        img.src = imgUrl;
+        // 智慧候選期數回退機制 (Candidate Fallback)
+        const candidates = getCandidateRuns();
+        let candidateIndex = 0;
+
+        function tryNextCandidate() {
+            if (candidateIndex >= candidates.length) {
+                if (currentHoverDate === targetYYYYMMDD) {
+                    cardStatus.textContent = '無此日期之模式圖';
+                }
+                return;
+            }
+
+            const tryRun = candidates[candidateIndex++];
+            const tryMonth = tryRun.substr(0, 6);
+            const imgUrl = `https://watch.ncdr.nat.gov.tw/00_Wxmap/2F6_MPAS2WRF_45d/${tryMonth}/${tryRun}/semw05_qpf_${tryRun}_${targetYYYYMMDD}.gif`;
+
+            const testImg = new Image();
+            testImg.onload = function () {
+                if (currentHoverDate === targetYYYYMMDD) {
+                    cardInfo.textContent = `模式發布：${tryRun.substr(0, 4)}/${tryRun.substr(4, 2)}/${tryRun.substr(6, 2)}`;
+                    cardImg.src = imgUrl;
+                    cardLoading.style.display = 'none';
+                    cardImg.style.display = 'block';
+                }
+            };
+            testImg.onerror = function () {
+                // 若此期數無圖片 (404)，立即嘗試前一期！
+                tryNextCandidate();
+            };
+            testImg.src = imgUrl;
+        }
+
+        tryNextCandidate();
 
         const cardWidth = 250;
         const cardHeight = 360;
@@ -403,7 +330,7 @@
 
         hoverTimer = setTimeout(() => {
             showForecast(targetDate, e.clientX, e.clientY);
-        }, 100);
+        }, 80);
     });
 
 })();
