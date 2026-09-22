@@ -1,11 +1,17 @@
 (function () {
     'use strict';
 
-    console.log('%c[NCDR Rain Forecast Extension] 啟動中...', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
+    console.log('%c[NCDR Rain Forecast Extension] 擴充功能啟動成功！v1.2.0', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
 
     let latestRun = null;
     let hoverTimer = null;
     let currentHoverDate = null;
+
+    const badge = document.createElement('div');
+    badge.id = 'ncdr-status-badge';
+    badge.innerHTML = `🌧️ NCDR 預報已就緒 <span style="font-size:11px;opacity:0.8;">(點我測試)</span>`;
+    badge.title = '點擊可立即測試彈出最新降雨預報圖';
+    document.body.appendChild(badge);
 
     const tooltip = document.createElement('div');
     tooltip.id = 'ncdr-rain-tooltip';
@@ -29,12 +35,136 @@
     `;
     document.body.appendChild(tooltip);
 
+    const style = document.createElement('style');
+    style.textContent = `
+        #ncdr-status-badge {
+            position: fixed;
+            bottom: 18px;
+            right: 18px;
+            background: linear-gradient(135deg, #1976d2, #0d47a1);
+            color: #ffffff;
+            padding: 7px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            z-index: 9999999;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+        }
+        #ncdr-status-badge:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+        }
+        #ncdr-rain-tooltip {
+            position: fixed;
+            display: none;
+            z-index: 999999999 !important;
+            pointer-events: none;
+            transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+            opacity: 0;
+            transform: scale(0.96);
+        }
+        #ncdr-rain-tooltip.visible {
+            display: block !important;
+            opacity: 1 !important;
+            transform: scale(1) !important;
+        }
+        .ncdr-card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.32), 0 2px 10px rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            width: 245px;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+        }
+        .ncdr-header {
+            background: linear-gradient(135deg, #1976d2, #0d47a1);
+            color: #ffffff;
+            padding: 9px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .ncdr-title {
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+        }
+        .ncdr-badge {
+            font-size: 10px;
+            background: rgba(255, 255, 255, 0.25);
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-weight: 500;
+        }
+        .ncdr-body {
+            position: relative;
+            background: #f8fafc;
+            min-height: 290px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .ncdr-img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .ncdr-loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            color: #64748b;
+            font-size: 12px;
+            padding: 20px 0;
+        }
+        .ncdr-spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid #e2e8f0;
+            border-top: 3px solid #1976d2;
+            border-radius: 50%;
+            animation: ncdr-spin 0.8s linear infinite;
+        }
+        @keyframes ncdr-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .ncdr-footer {
+            background: #ffffff;
+            padding: 6px 12px;
+            font-size: 10px;
+            color: #94a3b8;
+            border-top: 1px solid #f1f5f9;
+            text-align: right;
+        }
+    `;
+    document.head.appendChild(style);
+
     const cardTitle = document.getElementById('ncdr-card-title');
     const cardBadge = document.getElementById('ncdr-card-badge');
     const cardLoading = document.getElementById('ncdr-card-loading');
     const cardStatus = document.getElementById('ncdr-card-status');
     const cardImg = document.getElementById('ncdr-card-img');
     const cardInfo = document.getElementById('ncdr-card-info');
+
+    badge.addEventListener('click', function () {
+        const testDate = new Date();
+        testDate.setDate(testDate.getDate() + 3);
+        showForecast(testDate, window.innerWidth - 280, window.innerHeight - 420);
+        setTimeout(() => {
+            const clickOutside = () => {
+                hideForecast();
+                document.removeEventListener('click', clickOutside);
+            };
+            document.addEventListener('click', clickOutside);
+        }, 100);
+    });
 
     function getDefaultRun() {
         const now = new Date();
@@ -90,7 +220,6 @@
 
     fetchLatestRunDate();
 
-    // Google 日曆 data-datekey 數學解碼公式
     function decodeGoogleDateKey(key) {
         const num = parseInt(key, 10);
         if (isNaN(num)) return null;
@@ -102,6 +231,24 @@
             return new Date(year, month - 1, day);
         }
         return null;
+    }
+
+    function getCurrentCalendarHeaderYearMonth() {
+        const h1 = document.querySelector('header h1, div[role="heading"], div[aria-level="1"]');
+        if (h1) {
+            const text = h1.textContent || '';
+            const matchZh = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月/);
+            if (matchZh) {
+                return { year: parseInt(matchZh[1], 10), month: parseInt(matchZh[2], 10) - 1 };
+            }
+            const matchEn = text.match(/(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})/i);
+            if (matchEn) {
+                const d = new Date(text);
+                if (!isNaN(d.getTime())) return { year: d.getFullYear(), month: d.getMonth() };
+            }
+        }
+        const now = new Date();
+        return { year: now.getFullYear(), month: now.getMonth() };
     }
 
     function formatDateToYYYYMMDD(date) {
@@ -119,46 +266,56 @@
         return `${y}-${m}-${d} (${days[date.getDay()]})`;
     }
 
-    function extractDateFromElement(el) {
-        if (!el) return null;
+    function detectDateUnderPoint(x, y) {
+        const elements = document.elementsFromPoint(x, y);
+        if (!elements || elements.length === 0) return null;
 
-        let cur = el;
-        for (let i = 0; i < 8 && cur && cur !== document.body; i++) {
-            const dateKey = cur.getAttribute('data-datekey');
-            if (dateKey) {
-                const decoded = decodeGoogleDateKey(dateKey);
+        for (const el of elements) {
+            if (el.closest('#ncdr-rain-tooltip') || el.closest('#ncdr-status-badge')) continue;
+
+            const dateKeyEl = el.closest('[data-datekey]');
+            if (dateKeyEl) {
+                const key = dateKeyEl.getAttribute('data-datekey');
+                const decoded = decodeGoogleDateKey(key);
                 if (decoded) return decoded;
             }
 
-            if (cur.querySelector) {
-                const childWithKey = cur.querySelector('[data-datekey]');
-                if (childWithKey) {
-                    const decoded = decodeGoogleDateKey(childWithKey.getAttribute('data-datekey'));
-                    if (decoded) return decoded;
-                }
-            }
-
-            if (cur.dataset && cur.dataset.date) {
-                const parts = cur.dataset.date.split('-');
+            const dateAttrEl = el.closest('[data-date]');
+            if (dateAttrEl && dateAttrEl.dataset && dateAttrEl.dataset.date) {
+                const parts = dateAttrEl.dataset.date.split('-');
                 if (parts.length === 3) {
                     return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
                 }
             }
 
-            const label = cur.getAttribute('aria-label') || '';
-            if (label) {
-                const mZhFull = label.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
-                if (mZhFull) {
-                    return new Date(parseInt(mZhFull[1], 10), parseInt(mZhFull[2], 10) - 1, parseInt(mZhFull[3], 10));
+            let checkNode = el;
+            for (let d = 0; d < 4 && checkNode && checkNode !== document.body; d++) {
+                const label = checkNode.getAttribute('aria-label') || '';
+                if (label) {
+                    const mZhFull = label.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+                    if (mZhFull) {
+                        return new Date(parseInt(mZhFull[1], 10), parseInt(mZhFull[2], 10) - 1, parseInt(mZhFull[3], 10));
+                    }
+                    const mZhShort = label.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+                    if (mZhShort) {
+                        const ym = getCurrentCalendarHeaderYearMonth();
+                        return new Date(ym.year, parseInt(mZhShort[1], 10) - 1, parseInt(mZhShort[2], 10));
+                    }
+                    const mEn = label.match(/(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s*(\d{4})?/i);
+                    if (mEn) {
+                        const parsed = new Date(label);
+                        if (!isNaN(parsed.getTime())) return parsed;
+                    }
                 }
-                const mEn = label.match(/(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s*(\d{4})/i);
-                if (mEn) {
-                    const d = new Date(label);
-                    if (!isNaN(d.getTime())) return d;
-                }
+                checkNode = checkNode.parentElement;
             }
 
-            cur = cur.parentElement;
+            const text = el.textContent ? el.textContent.trim() : '';
+            if (/^([1-9]|[12]\d|3[01])$/.test(text) && el.tagName && (el.tagName === 'SPAN' || el.tagName === 'H2' || el.tagName === 'DIV')) {
+                const ym = getCurrentCalendarHeaderYearMonth();
+                const dayNum = parseInt(text, 10);
+                return new Date(ym.year, ym.month, dayNum);
+            }
         }
 
         return null;
@@ -173,12 +330,12 @@
         const targetYYYYMMDD = formatDateToYYYYMMDD(targetDate);
         const diffDays = Math.round((targetDate.getTime() - latestRun.baseDateTimestamp) / (86400 * 1000));
 
-        if (diffDays < 0 || diffDays > 42) {
+        if (diffDays < -1 || diffDays > 45) {
             hideForecast();
             return;
         }
 
-        const weekNum = Math.floor(diffDays / 7) + 1;
+        const weekNum = Math.max(1, Math.floor(diffDays / 7) + 1);
         cardTitle.textContent = formatDateDisplay(targetDate);
         cardBadge.textContent = `第 ${weekNum} 週預報`;
         cardInfo.textContent = `模式發布：${latestRun.runDate.substr(0, 4)}/${latestRun.runDate.substr(4, 2)}/${latestRun.runDate.substr(6, 2)}`;
@@ -191,21 +348,17 @@
 
         const img = new Image();
         img.onload = function () {
-            if (currentHoverDate === targetYYYYMMDD) {
-                cardImg.src = imgUrl;
-                cardLoading.style.display = 'none';
-                cardImg.style.display = 'block';
-            }
+            cardImg.src = imgUrl;
+            cardLoading.style.display = 'none';
+            cardImg.style.display = 'block';
         };
         img.onerror = function () {
-            if (currentHoverDate === targetYYYYMMDD) {
-                cardStatus.textContent = '無此日期之模式圖';
-            }
+            cardStatus.textContent = '無此日期之數值模式圖';
         };
         img.src = imgUrl;
 
-        const cardWidth = 245;
-        const cardHeight = 350;
+        const cardWidth = 250;
+        const cardHeight = 360;
         let posX = mouseX + 16;
         let posY = mouseY + 16;
 
@@ -223,8 +376,7 @@
     }
 
     document.addEventListener('mousemove', function (e) {
-        const target = e.target;
-        const targetDate = extractDateFromElement(target);
+        const targetDate = detectDateUnderPoint(e.clientX, e.clientY);
 
         if (!targetDate) {
             if (hoverTimer) {
@@ -239,8 +391,8 @@
         if (dateStr === currentHoverDate) {
             let posX = e.clientX + 16;
             let posY = e.clientY + 16;
-            if (posX + 245 > window.innerWidth) posX = e.clientX - 245 - 16;
-            if (posY + 350 > window.innerHeight) posY = e.clientY - 350 - 16;
+            if (posX + 250 > window.innerWidth) posX = e.clientX - 250 - 16;
+            if (posY + 360 > window.innerHeight) posY = e.clientY - 360 - 16;
             tooltip.style.left = `${Math.max(10, posX)}px`;
             tooltip.style.top = `${Math.max(10, posY)}px`;
             return;
@@ -251,7 +403,7 @@
 
         hoverTimer = setTimeout(() => {
             showForecast(targetDate, e.clientX, e.clientY);
-        }, 120);
+        }, 100);
     });
 
 })();
