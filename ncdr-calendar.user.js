@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Google 日曆 - NCDR 六週降雨預報懸停卡片 (Taiwan Rain Forecast)
 // @namespace    https://github.com/charles0506/google-calendar-ncdr-rain
-// @version      1.2.0
-// @description  在 Google 日曆中，將滑鼠移到任意日期格子上，立即浮現當天 NCDR 全台六週降雨預報圖！
+// @version      1.4.0
+// @description  在 Google 日曆中，將滑鼠移到任意日期格子上，立即浮現當天 NCDR 全台六週降雨預報圖！含 ON/OFF 開關。
 // @author       Antigravity
 // @match        *://calendar.google.com/*
 // @icon         https://watch.ncdr.nat.gov.tw/icon/watch_icon_02.ico
@@ -16,19 +16,51 @@
 (function () {
     'use strict';
 
-    console.log('%c[NCDR Rain Forecast] 腳本啟動成功！版本 v1.2.0', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
+    console.log('%c[NCDR Rain Forecast] 腳本啟動成功！v1.4.0 (含 ON/OFF 開關)', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
 
     // 狀態設定
     let latestRun = null;
     let hoverTimer = null;
     let currentHoverDate = null;
+    let isEnabled = true;
 
-    // 1. 建立右下角常駐狀態標籤 (讓使用者一眼看出外掛是否運作)
+    try {
+        const stored = GM_getValue('ncdr_enabled', null);
+        if (stored !== null) isEnabled = stored;
+        else isEnabled = localStorage.getItem('ncdr_enabled') !== 'false';
+    } catch (e) {
+        isEnabled = localStorage.getItem('ncdr_enabled') !== 'false';
+    }
+
+    // 1. 建立右下角可開關的標籤
     const badge = document.createElement('div');
     badge.id = 'ncdr-status-badge';
-    badge.innerHTML = `🌧️ NCDR 預報已就緒 <span style="font-size:11px;opacity:0.8;">(點我測試)</span>`;
-    badge.title = '點擊可立即測試彈出最新降雨預報圖';
     document.body.appendChild(badge);
+
+    function updateBadgeUI() {
+        if (isEnabled) {
+            badge.innerHTML = `🌧️ 降雨預報 <span class="ncdr-toggle-on">ON</span>`;
+            badge.title = '點擊切換為 [OFF] 關閉懸停卡片';
+            badge.classList.remove('disabled');
+        } else {
+            badge.innerHTML = `🌧️ 降雨預報 <span class="ncdr-toggle-off">OFF</span>`;
+            badge.title = '點擊切換為 [ON] 開啟懸停卡片';
+            badge.classList.add('disabled');
+        }
+    }
+
+    updateBadgeUI();
+
+    badge.addEventListener('click', function (e) {
+        e.stopPropagation();
+        isEnabled = !isEnabled;
+        try {
+            GM_setValue('ncdr_enabled', isEnabled);
+        } catch (err) {}
+        localStorage.setItem('ncdr_enabled', isEnabled.toString());
+        updateBadgeUI();
+        if (!isEnabled) hideForecast();
+    });
 
     // 2. 建立浮動卡片 DOM
     const tooltip = document.createElement('div');
@@ -62,7 +94,7 @@
             right: 18px;
             background: linear-gradient(135deg, #1976d2, #0d47a1);
             color: #ffffff;
-            padding: 7px 14px;
+            padding: 6px 14px;
             border-radius: 20px;
             font-size: 12px;
             font-weight: bold;
@@ -72,10 +104,33 @@
             transition: all 0.2s ease;
             user-select: none;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        #ncdr-status-badge.disabled {
+            background: #94a3b8 !important;
+            opacity: 0.75;
         }
         #ncdr-status-badge:hover {
             transform: scale(1.05);
             box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+        }
+        .ncdr-toggle-on {
+            background: #22c55e;
+            color: #ffffff;
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 700;
+        }
+        .ncdr-toggle-off {
+            background: #f1f5f9;
+            color: #475569;
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 700;
         }
         #ncdr-rain-tooltip {
             position: fixed;
@@ -172,21 +227,7 @@
     const cardImg = document.getElementById('ncdr-card-img');
     const cardInfo = document.getElementById('ncdr-card-info');
 
-    // 點擊右下角狀態標籤直接測試
-    badge.addEventListener('click', function (e) {
-        const testDate = new Date();
-        testDate.setDate(testDate.getDate() + 3); // 測試 3 天後的預報
-        showForecast(testDate, window.innerWidth - 280, window.innerHeight - 420);
-        setTimeout(() => {
-            const clickOutside = () => {
-                hideForecast();
-                document.removeEventListener('click', clickOutside);
-            };
-            document.addEventListener('click', clickOutside);
-        }, 100);
-    });
-
-    // 預設備用期數 (保證絕不空白)
+    // 預設備用期數
     function getDefaultRun() {
         const now = new Date();
         const y = now.getFullYear();
@@ -222,7 +263,7 @@
         const handleSuccess = function (text) {
             const parts = text.trim().split(',');
             if (parts.length >= 2) {
-                const rawDate = parts[1].trim(); // 例 202609210000
+                const rawDate = parts[1].trim();
                 const runDate = rawDate.substr(0, 10);
                 const runMonth = rawDate.substr(0, 6);
                 
@@ -239,7 +280,6 @@
                     localStorage.setItem('ncdr_latest_run', JSON.stringify(latestRun));
                     localStorage.setItem('ncdr_cached_time', now.toString());
                 }
-                console.log('[NCDR Rain Forecast] 期數更新成功:', latestRun);
                 if (callback) callback(latestRun);
             }
         };
@@ -289,7 +329,6 @@
         return null;
     }
 
-    // 取得 Google 日曆當前畫面上顯示的 年與月 (例如 "2026年9月")
     function getCurrentCalendarHeaderYearMonth() {
         const h1 = document.querySelector('header h1, div[role="heading"], div[aria-level="1"]');
         if (h1) {
@@ -308,7 +347,6 @@
         return { year: now.getFullYear(), month: now.getMonth() };
     }
 
-    // 格式化日期
     function formatDateToYYYYMMDD(date) {
         const y = date.getFullYear();
         const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -324,17 +362,13 @@
         return `${y}-${m}-${d} (${days[date.getDay()]})`;
     }
 
-    // 全方位日期探測器 (涵蓋格子、數字、活動覆蓋層)
     function detectDateUnderPoint(x, y) {
-        // 使用 elementsFromPoint 穿透上層所有覆蓋層 (包含行程條、空白遮罩等)
         const elements = document.elementsFromPoint(x, y);
         if (!elements || elements.length === 0) return null;
 
         for (const el of elements) {
-            // 忽略外掛自身元素
             if (el.closest('#ncdr-rain-tooltip') || el.closest('#ncdr-status-badge')) continue;
 
-            // 1. 優先檢查 data-datekey
             const dateKeyEl = el.closest('[data-datekey]');
             if (dateKeyEl) {
                 const key = dateKeyEl.getAttribute('data-datekey');
@@ -342,7 +376,6 @@
                 if (decoded) return decoded;
             }
 
-            // 2. 檢查 data-date 屬性
             const dateAttrEl = el.closest('[data-date]');
             if (dateAttrEl && dateAttrEl.dataset && dateAttrEl.dataset.date) {
                 const parts = dateAttrEl.dataset.date.split('-');
@@ -351,7 +384,6 @@
                 }
             }
 
-            // 3. 檢查 aria-label (完整中文：例 "2026年9月30日")
             let checkNode = el;
             for (let d = 0; d < 4 && checkNode && checkNode !== document.body; d++) {
                 const label = checkNode.getAttribute('aria-label') || '';
@@ -374,10 +406,8 @@
                 checkNode = checkNode.parentElement;
             }
 
-            // 4. 檢查是否直接滑鼠停在日期數字按鈕 (例 "30")
             const text = el.textContent ? el.textContent.trim() : '';
             if (/^([1-9]|[12]\d|3[01])$/.test(text) && el.tagName && (el.tagName === 'SPAN' || el.tagName === 'H2' || el.tagName === 'DIV')) {
-                // 找鄰近的日曆格確定日期
                 const ym = getCurrentCalendarHeaderYearMonth();
                 const dayNum = parseInt(text, 10);
                 return new Date(ym.year, ym.month, dayNum);
@@ -387,7 +417,6 @@
         return null;
     }
 
-    // 產生候選期數列表 (今天、昨天、前天... 避免 404)
     function getCandidateRuns() {
         const runs = [];
         if (latestRun && latestRun.runDate) {
@@ -406,8 +435,9 @@
         return runs;
     }
 
-    // 顯示卡片
     function showForecast(targetDate, mouseX, mouseY) {
+        if (!isEnabled) return;
+
         const targetYYYYMMDD = formatDateToYYYYMMDD(targetDate);
         const baseTimestamp = latestRun ? latestRun.baseDateTimestamp : Date.now();
         const diffDays = Math.round((targetDate.getTime() - baseTimestamp) / (86400 * 1000));
@@ -425,7 +455,6 @@
         cardStatus.textContent = '取得雨量圖中...';
         cardImg.style.display = 'none';
 
-        // 智慧候選期數回退機制 (Candidate Fallback)
         const candidates = getCandidateRuns();
         let candidateIndex = 0;
 
@@ -443,7 +472,7 @@
 
             const testImg = new Image();
             testImg.onload = function () {
-                if (currentHoverDate === targetYYYYMMDD) {
+                if (currentHoverDate === targetYYYYMMDD && isEnabled) {
                     cardInfo.textContent = `模式發布：${tryRun.substr(0, 4)}/${tryRun.substr(4, 2)}/${tryRun.substr(6, 2)}`;
                     cardImg.src = imgUrl;
                     cardLoading.style.display = 'none';
@@ -476,8 +505,12 @@
         currentHoverDate = null;
     }
 
-    // 全局滑鼠移動監聽 (防抖動)
     document.addEventListener('mousemove', function (e) {
+        if (!isEnabled) {
+            hideForecast();
+            return;
+        }
+
         const targetDate = detectDateUnderPoint(e.clientX, e.clientY);
 
         if (!targetDate) {
@@ -491,7 +524,6 @@
 
         const dateStr = formatDateToYYYYMMDD(targetDate);
         if (dateStr === currentHoverDate) {
-            // 微調位置
             let posX = e.clientX + 16;
             let posY = e.clientY + 16;
             if (posX + 250 > window.innerWidth) posX = e.clientX - 250 - 16;

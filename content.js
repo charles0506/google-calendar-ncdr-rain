@@ -1,17 +1,38 @@
 (function () {
     'use strict';
 
-    console.log('%c[NCDR Rain Forecast Extension] 擴充功能啟動成功！v1.3.0', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
+    console.log('%c[NCDR Rain Forecast Extension] 擴充功能啟動成功！v1.4.0 (含 ON/OFF 開關)', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
 
     let latestRun = null;
     let hoverTimer = null;
     let currentHoverDate = null;
+    let isEnabled = localStorage.getItem('ncdr_enabled') !== 'false';
 
     const badge = document.createElement('div');
     badge.id = 'ncdr-status-badge';
-    badge.innerHTML = `🌧️ NCDR 預報已就緒 <span style="font-size:11px;opacity:0.8;">(點我測試)</span>`;
-    badge.title = '點擊可立即測試彈出最新降雨預報圖';
     document.body.appendChild(badge);
+
+    function updateBadgeUI() {
+        if (isEnabled) {
+            badge.innerHTML = `🌧️ 降雨預報 <span class="ncdr-toggle-on">ON</span>`;
+            badge.title = '點擊切換為 [OFF] 關閉懸停卡片';
+            badge.classList.remove('disabled');
+        } else {
+            badge.innerHTML = `🌧️ 降雨預報 <span class="ncdr-toggle-off">OFF</span>`;
+            badge.title = '點擊切換為 [ON] 開啟懸停卡片';
+            badge.classList.add('disabled');
+        }
+    }
+
+    updateBadgeUI();
+
+    badge.addEventListener('click', function (e) {
+        e.stopPropagation();
+        isEnabled = !isEnabled;
+        localStorage.setItem('ncdr_enabled', isEnabled.toString());
+        updateBadgeUI();
+        if (!isEnabled) hideForecast();
+    });
 
     const tooltip = document.createElement('div');
     tooltip.id = 'ncdr-rain-tooltip';
@@ -42,39 +63,18 @@
     const cardImg = document.getElementById('ncdr-card-img');
     const cardInfo = document.getElementById('ncdr-card-info');
 
-    badge.addEventListener('click', function () {
-        const testDate = new Date();
-        testDate.setDate(testDate.getDate() + 5);
-        showForecast(testDate, window.innerWidth - 280, window.innerHeight - 420);
-        setTimeout(() => {
-            const clickOutside = () => {
-                hideForecast();
-                document.removeEventListener('click', clickOutside);
-            };
-            document.addEventListener('click', clickOutside);
-        }, 100);
-    });
-
-    // 產生候選期數列表 (今天、昨天、前天... 避免 404)
-    function getCandidateRuns() {
-        const runs = [];
-        if (latestRun && latestRun.runDate) {
-            runs.push(latestRun.runDate);
-        }
+    function getDefaultRun() {
         const now = new Date();
-        for (let i = 0; i <= 4; i++) {
-            const d = new Date(now);
-            d.setDate(d.getDate() - i);
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            const runStr = `${y}${m}${day}00`;
-            if (!runs.includes(runStr)) runs.push(runStr);
-        }
-        return runs;
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        return {
+            runMonth: `${y}${m}`,
+            runDate: `${y}${m}${d}00`,
+            baseDateTimestamp: new Date(y, now.getMonth(), now.getDate()).getTime()
+        };
     }
 
-    // 透過 background service worker 取得 NCDR 最新發布期數
     function fetchLatestRunDate(callback) {
         const cached = localStorage.getItem('ncdr_latest_run');
         const cachedTime = parseInt(localStorage.getItem('ncdr_cached_time') || '0', 10);
@@ -104,7 +104,6 @@
                         latestRun = { runMonth, runDate, baseDateTimestamp: baseDate.getTime() };
                         localStorage.setItem('ncdr_latest_run', JSON.stringify(latestRun));
                         localStorage.setItem('ncdr_cached_time', now.toString());
-                        console.log('[NCDR Extension] 透過後台取得最新期數:', latestRun);
                         if (callback) callback(latestRun);
                         return;
                     }
@@ -232,7 +231,27 @@
         return null;
     }
 
+    function getCandidateRuns() {
+        const runs = [];
+        if (latestRun && latestRun.runDate) {
+            runs.push(latestRun.runDate);
+        }
+        const now = new Date();
+        for (let i = 0; i <= 4; i++) {
+            const d = new Date(now);
+            d.setDate(d.getDate() - i);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const runStr = `${y}${m}${day}00`;
+            if (!runs.includes(runStr)) runs.push(runStr);
+        }
+        return runs;
+    }
+
     function showForecast(targetDate, mouseX, mouseY) {
+        if (!isEnabled) return;
+
         const targetYYYYMMDD = formatDateToYYYYMMDD(targetDate);
         const baseTimestamp = latestRun ? latestRun.baseDateTimestamp : Date.now();
         const diffDays = Math.round((targetDate.getTime() - baseTimestamp) / (86400 * 1000));
@@ -250,7 +269,6 @@
         cardStatus.textContent = '取得雨量圖中...';
         cardImg.style.display = 'none';
 
-        // 智慧候選期數回退機制 (Candidate Fallback)
         const candidates = getCandidateRuns();
         let candidateIndex = 0;
 
@@ -268,7 +286,7 @@
 
             const testImg = new Image();
             testImg.onload = function () {
-                if (currentHoverDate === targetYYYYMMDD) {
+                if (currentHoverDate === targetYYYYMMDD && isEnabled) {
                     cardInfo.textContent = `模式發布：${tryRun.substr(0, 4)}/${tryRun.substr(4, 2)}/${tryRun.substr(6, 2)}`;
                     cardImg.src = imgUrl;
                     cardLoading.style.display = 'none';
@@ -276,7 +294,6 @@
                 }
             };
             testImg.onerror = function () {
-                // 若此期數無圖片 (404)，立即嘗試前一期！
                 tryNextCandidate();
             };
             testImg.src = imgUrl;
@@ -303,6 +320,11 @@
     }
 
     document.addEventListener('mousemove', function (e) {
+        if (!isEnabled) {
+            hideForecast();
+            return;
+        }
+
         const targetDate = detectDateUnderPoint(e.clientX, e.clientY);
 
         if (!targetDate) {
@@ -330,7 +352,7 @@
 
         hoverTimer = setTimeout(() => {
             showForecast(targetDate, e.clientX, e.clientY);
-        }, 80);
+        }, 100);
     });
 
 })();
