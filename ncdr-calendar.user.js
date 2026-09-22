@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Google 日曆 - NCDR 六週降雨預報懸停卡片 (Taiwan Rain Forecast)
-// @namespace    https://github.com/ncdr-calendar/google-calendar-ncdr-rain
+// @namespace    https://github.com/charles0506/google-calendar-ncdr-rain
 // @version      1.0.0
 // @description  在 Google 日曆中，將滑鼠移到任意日期格子上，立即浮現當天 NCDR 全台六週降雨預報圖！
 // @author       Antigravity

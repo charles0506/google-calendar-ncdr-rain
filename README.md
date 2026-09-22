@@ -18,6 +18,10 @@
 
 ### 方法 A：使用 Tampermonkey（推薦，最快速！）
 
+👉 **[點此直接一鍵安裝 Tampermonkey 腳本](https://raw.githubusercontent.com/charles0506/google-calendar-ncdr-rain/master/ncdr-calendar.user.js)**  
+*(有裝竄改猴瀏覽器會自動彈出安裝視窗，點「安裝」即可！)*
+
+或者手動安裝：
 1. 打開瀏覽器的 **Tampermonkey（竄改猴）** 圖示，點擊 **「新增腳本」**。
 2. 將本專案中的 [`ncdr-calendar.user.js`](./ncdr-calendar.user.js) 內容完整複製並貼上到編輯器中。
 3. 按下鍵盤 `Ctrl + S` 儲存腳本。
