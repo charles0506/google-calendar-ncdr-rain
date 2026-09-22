@@ -1,13 +1,12 @@
 (function () {
     'use strict';
 
-    console.log('[NCDR Rain Forecast Extension] 啟動中...');
+    console.log('%c[NCDR Rain Forecast Extension] 啟動中...', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
 
     let latestRun = null;
     let hoverTimer = null;
     let currentHoverDate = null;
 
-    // 建立浮動卡片 DOM
     const tooltip = document.createElement('div');
     tooltip.id = 'ncdr-rain-tooltip';
     tooltip.innerHTML = `
@@ -19,7 +18,7 @@
             <div class="ncdr-body">
                 <div class="ncdr-loading" id="ncdr-card-loading">
                     <div class="ncdr-spinner"></div>
-                    <span>取得雨量圖中...</span>
+                    <span id="ncdr-card-status">取得雨量圖中...</span>
                 </div>
                 <img id="ncdr-card-img" class="ncdr-img" alt="降雨預報圖" style="display:none;" />
             </div>
@@ -33,10 +32,22 @@
     const cardTitle = document.getElementById('ncdr-card-title');
     const cardBadge = document.getElementById('ncdr-card-badge');
     const cardLoading = document.getElementById('ncdr-card-loading');
+    const cardStatus = document.getElementById('ncdr-card-status');
     const cardImg = document.getElementById('ncdr-card-img');
     const cardInfo = document.getElementById('ncdr-card-info');
 
-    // 取得最新 NCDR 執行期數
+    function getDefaultRun() {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        return {
+            runMonth: `${y}${m}`,
+            runDate: `${y}${m}${d}00`,
+            baseDateTimestamp: new Date(y, now.getMonth(), now.getDate()).getTime()
+        };
+    }
+
     function fetchLatestRunDate(callback) {
         const cached = localStorage.getItem('ncdr_latest_run');
         const cachedTime = parseInt(localStorage.getItem('ncdr_cached_time') || '0', 10);
@@ -59,9 +70,9 @@
                     const runDate = rawDate.substr(0, 10);
                     const runMonth = rawDate.substr(0, 6);
                     
-                    const year = parseInt(runDate.substr(0, 4));
-                    const month = parseInt(runDate.substr(4, 2)) - 1;
-                    const day = parseInt(runDate.substr(6, 2));
+                    const year = parseInt(runDate.substr(0, 4), 10);
+                    const month = parseInt(runDate.substr(4, 2), 10) - 1;
+                    const day = parseInt(runDate.substr(6, 2), 10);
                     const baseDate = new Date(year, month, day);
 
                     latestRun = { runMonth, runDate, baseDateTimestamp: baseDate.getTime() };
@@ -71,12 +82,27 @@
                     if (callback) callback(latestRun);
                 }
             })
-            .catch(err => {
-                console.warn('[NCDR Extension] 無法取得最新期數:', err);
+            .catch(() => {
+                latestRun = getDefaultRun();
+                if (callback) callback(latestRun);
             });
     }
 
     fetchLatestRunDate();
+
+    // Google 日曆 data-datekey 數學解碼公式
+    function decodeGoogleDateKey(key) {
+        const num = parseInt(key, 10);
+        if (isNaN(num)) return null;
+        const year = Math.floor(num / 512) + 1970;
+        const rem = num % 512;
+        const month = Math.floor(rem / 32);
+        const day = rem % 32;
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && year >= 2020 && year <= 2035) {
+            return new Date(year, month - 1, day);
+        }
+        return null;
+    }
 
     function formatDateToYYYYMMDD(date) {
         const y = date.getFullYear();
@@ -96,47 +122,43 @@
     function extractDateFromElement(el) {
         if (!el) return null;
 
-        let current = el;
-        let depth = 0;
-        while (current && depth < 6 && current !== document.body) {
-            if (current.dataset && current.dataset.date) {
-                const parts = current.dataset.date.split('-');
+        let cur = el;
+        for (let i = 0; i < 8 && cur && cur !== document.body; i++) {
+            const dateKey = cur.getAttribute('data-datekey');
+            if (dateKey) {
+                const decoded = decodeGoogleDateKey(dateKey);
+                if (decoded) return decoded;
+            }
+
+            if (cur.querySelector) {
+                const childWithKey = cur.querySelector('[data-datekey]');
+                if (childWithKey) {
+                    const decoded = decodeGoogleDateKey(childWithKey.getAttribute('data-datekey'));
+                    if (decoded) return decoded;
+                }
+            }
+
+            if (cur.dataset && cur.dataset.date) {
+                const parts = cur.dataset.date.split('-');
                 if (parts.length === 3) {
-                    return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                    return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
                 }
             }
 
-            const label = current.getAttribute('aria-label') || '';
+            const label = cur.getAttribute('aria-label') || '';
             if (label) {
-                const matchZhFull = label.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
-                if (matchZhFull) {
-                    return new Date(parseInt(matchZhFull[1]), parseInt(matchZhFull[2]) - 1, parseInt(matchZhFull[3]));
+                const mZhFull = label.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+                if (mZhFull) {
+                    return new Date(parseInt(mZhFull[1], 10), parseInt(mZhFull[2], 10) - 1, parseInt(mZhFull[3], 10));
                 }
-
-                const matchEn = label.match(/(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s*(\d{4})/i);
-                if (matchEn) {
-                    const parsed = new Date(label);
-                    if (!isNaN(parsed.getTime())) return parsed;
-                }
-            }
-
-            if (current.getAttribute('role') === 'gridcell' || current.getAttribute('data-datekey')) {
-                const heading = current.querySelector('h2, [aria-label*="月"], [aria-label*="日"]');
-                if (heading) {
-                    const hLabel = heading.getAttribute('aria-label') || '';
-                    const match = hLabel.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/) ||
-                                  hLabel.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
-                    if (match) {
-                        const year = match.length === 4 ? parseInt(match[1]) : new Date().getFullYear();
-                        const month = match.length === 4 ? parseInt(match[2]) - 1 : parseInt(match[1]) - 1;
-                        const day = match.length === 4 ? parseInt(match[3]) : parseInt(match[2]);
-                        return new Date(year, month, day);
-                    }
+                const mEn = label.match(/(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s*(\d{4})/i);
+                if (mEn) {
+                    const d = new Date(label);
+                    if (!isNaN(d.getTime())) return d;
                 }
             }
 
-            current = current.parentElement;
-            depth++;
+            cur = cur.parentElement;
         }
 
         return null;
@@ -164,6 +186,7 @@
         const imgUrl = `https://watch.ncdr.nat.gov.tw/00_Wxmap/2F6_MPAS2WRF_45d/${latestRun.runMonth}/${latestRun.runDate}/semw05_qpf_${latestRun.runDate}_${targetYYYYMMDD}.gif`;
 
         cardLoading.style.display = 'flex';
+        cardStatus.textContent = '取得雨量圖中...';
         cardImg.style.display = 'none';
 
         const img = new Image();
@@ -176,21 +199,21 @@
         };
         img.onerror = function () {
             if (currentHoverDate === targetYYYYMMDD) {
-                cardLoading.innerHTML = '<span style="color:#ef4444;">無此日期預報圖</span>';
+                cardStatus.textContent = '無此日期之模式圖';
             }
         };
         img.src = imgUrl;
 
-        const cardWidth = 240;
-        const cardHeight = 340;
+        const cardWidth = 245;
+        const cardHeight = 350;
         let posX = mouseX + 16;
         let posY = mouseY + 16;
 
         if (posX + cardWidth > window.innerWidth) posX = mouseX - cardWidth - 16;
         if (posY + cardHeight > window.innerHeight) posY = mouseY - cardHeight - 16;
 
-        tooltip.style.left = `${posX}px`;
-        tooltip.style.top = `${posY}px`;
+        tooltip.style.left = `${Math.max(10, posX)}px`;
+        tooltip.style.top = `${Math.max(10, posY)}px`;
         tooltip.classList.add('visible');
     }
 
@@ -216,10 +239,10 @@
         if (dateStr === currentHoverDate) {
             let posX = e.clientX + 16;
             let posY = e.clientY + 16;
-            if (posX + 240 > window.innerWidth) posX = e.clientX - 240 - 16;
-            if (posY + 340 > window.innerHeight) posY = e.clientY - 340 - 16;
-            tooltip.style.left = `${posX}px`;
-            tooltip.style.top = `${posY}px`;
+            if (posX + 245 > window.innerWidth) posX = e.clientX - 245 - 16;
+            if (posY + 350 > window.innerHeight) posY = e.clientY - 350 - 16;
+            tooltip.style.left = `${Math.max(10, posX)}px`;
+            tooltip.style.top = `${Math.max(10, posY)}px`;
             return;
         }
 
@@ -228,7 +251,7 @@
 
         hoverTimer = setTimeout(() => {
             showForecast(targetDate, e.clientX, e.clientY);
-        }, 150);
+        }, 120);
     });
 
 })();
