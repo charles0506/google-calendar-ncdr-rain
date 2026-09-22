@@ -387,18 +387,32 @@
         return null;
     }
 
+    // 產生候選期數列表 (今天、昨天、前天... 避免 404)
+    function getCandidateRuns() {
+        const runs = [];
+        if (latestRun && latestRun.runDate) {
+            runs.push(latestRun.runDate);
+        }
+        const now = new Date();
+        for (let i = 0; i <= 4; i++) {
+            const d = new Date(now);
+            d.setDate(d.getDate() - i);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const runStr = `${y}${m}${day}00`;
+            if (!runs.includes(runStr)) runs.push(runStr);
+        }
+        return runs;
+    }
+
     // 顯示卡片
     function showForecast(targetDate, mouseX, mouseY) {
-        if (!latestRun) {
-            fetchLatestRunDate(() => showForecast(targetDate, mouseX, mouseY));
-            return;
-        }
-
         const targetYYYYMMDD = formatDateToYYYYMMDD(targetDate);
-        const diffDays = Math.round((targetDate.getTime() - latestRun.baseDateTimestamp) / (86400 * 1000));
+        const baseTimestamp = latestRun ? latestRun.baseDateTimestamp : Date.now();
+        const diffDays = Math.round((targetDate.getTime() - baseTimestamp) / (86400 * 1000));
 
-        // NCDR 涵蓋未來 42 天
-        if (diffDays < -1 || diffDays > 45) {
+        if (diffDays < -2 || diffDays > 45) {
             hideForecast();
             return;
         }
@@ -406,27 +420,44 @@
         const weekNum = Math.max(1, Math.floor(diffDays / 7) + 1);
         cardTitle.textContent = formatDateDisplay(targetDate);
         cardBadge.textContent = `第 ${weekNum} 週預報`;
-        cardInfo.textContent = `模式發布：${latestRun.runDate.substr(0, 4)}/${latestRun.runDate.substr(4, 2)}/${latestRun.runDate.substr(6, 2)}`;
-
-        // NCDR 最佳化雨量圖網址 (semw05 最佳化模型)
-        const imgUrl = `https://watch.ncdr.nat.gov.tw/00_Wxmap/2F6_MPAS2WRF_45d/${latestRun.runMonth}/${latestRun.runDate}/semw05_qpf_${latestRun.runDate}_${targetYYYYMMDD}.gif`;
 
         cardLoading.style.display = 'flex';
         cardStatus.textContent = '取得雨量圖中...';
         cardImg.style.display = 'none';
 
-        const img = new Image();
-        img.onload = function () {
-            cardImg.src = imgUrl;
-            cardLoading.style.display = 'none';
-            cardImg.style.display = 'block';
-        };
-        img.onerror = function () {
-            cardStatus.textContent = '無此日期之數值模式圖';
-        };
-        img.src = imgUrl;
+        // 智慧候選期數回退機制 (Candidate Fallback)
+        const candidates = getCandidateRuns();
+        let candidateIndex = 0;
 
-        // 計算卡片位置 (避開滑鼠與螢幕邊緣)
+        function tryNextCandidate() {
+            if (candidateIndex >= candidates.length) {
+                if (currentHoverDate === targetYYYYMMDD) {
+                    cardStatus.textContent = '無此日期之模式圖';
+                }
+                return;
+            }
+
+            const tryRun = candidates[candidateIndex++];
+            const tryMonth = tryRun.substr(0, 6);
+            const imgUrl = `https://watch.ncdr.nat.gov.tw/00_Wxmap/2F6_MPAS2WRF_45d/${tryMonth}/${tryRun}/semw05_qpf_${tryRun}_${targetYYYYMMDD}.gif`;
+
+            const testImg = new Image();
+            testImg.onload = function () {
+                if (currentHoverDate === targetYYYYMMDD) {
+                    cardInfo.textContent = `模式發布：${tryRun.substr(0, 4)}/${tryRun.substr(4, 2)}/${tryRun.substr(6, 2)}`;
+                    cardImg.src = imgUrl;
+                    cardLoading.style.display = 'none';
+                    cardImg.style.display = 'block';
+                }
+            };
+            testImg.onerror = function () {
+                tryNextCandidate();
+            };
+            testImg.src = imgUrl;
+        }
+
+        tryNextCandidate();
+
         const cardWidth = 250;
         const cardHeight = 360;
         let posX = mouseX + 16;
