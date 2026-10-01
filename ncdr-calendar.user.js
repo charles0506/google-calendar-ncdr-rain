@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google 日曆 - NCDR 六週降雨預報懸停卡片 (Taiwan Rain Forecast)
 // @namespace    https://github.com/charles0506/google-calendar-ncdr-rain
-// @version      1.5.0
+// @version      1.5.1
 // @description  在 Google 日曆中，將滑鼠移到任意日期格子上，立即浮現當天 NCDR 全台六週降雨預報圖！近兩天另附中央氣象署定量降水預報。含 ON/OFF 開關。
 // @author       Antigravity
 // @match        *://calendar.google.com/*
@@ -17,7 +17,7 @@
 (function () {
     'use strict';
 
-    console.log('%c[NCDR Rain Forecast] 腳本啟動成功！v1.5.0 (含 ON/OFF 開關)', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
+    console.log('%c[NCDR Rain Forecast] 腳本啟動成功！v1.5.1 (含 ON/OFF 開關)', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
 
     // 狀態設定
     let latestRun = null;
@@ -253,9 +253,10 @@
     const cardInfo = document.getElementById('ncdr-card-info');
     const cardCwa = document.getElementById('ncdr-card-cwa');
 
-    // 中央氣象署定量降水預報 (QPF)：未來 48 小時，每 12 小時一張
-    const CWA_IMG_BASE = 'https://www.cwa.gov.tw/Data/fcst_img/QPF_ChFcstPrecip_12_';
-    const CWA_FILES = ['12', '24', '36', '48'];
+    // 中央氣象署定量降水預報 (QPF)：未來 48 小時，有 12 小時一張與 6 小時一張兩組圖
+    const CWA_IMG_BASE = 'https://www.cwa.gov.tw/Data/fcst_img/QPF_ChFcstPrecip_';
+    const CWA_DAY_START = 8;
+    const CWA_DAY_END = 20;
     const TPE_OFFSET = 8 * 3600 * 1000;
     const COL_WIDTH = 245;
     let cwaInfo = null;
@@ -278,16 +279,30 @@
         const md = d => `${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())}`;
         const hm = d => `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
         const issue = new Date(start.getTime() - 2.5 * 3600 * 1000);
-        const periods = CWA_FILES.map((file, i) => {
-            const from = new Date(start.getTime() + i * 12 * 3600 * 1000);
-            const to = new Date(from.getTime() + 12 * 3600 * 1000);
-            return {
-                file,
-                dateKey: `${from.getUTCFullYear()}${pad(from.getUTCMonth() + 1)}${pad(from.getUTCDate())}`,
-                label: `${md(from)} ${hm(from)}～${md(to) === md(from) ? '' : md(to) + ' '}${hm(to)}`
-            };
+        const periods = [];
+        [12, 6].forEach((hours) => {
+            for (let end = hours; end <= 48; end += hours) {
+                const from = new Date(start.getTime() + (end - hours) * 3600 * 1000);
+                const to = new Date(from.getTime() + hours * 3600 * 1000);
+                periods.push({
+                    file: `${hours}_${pad(end)}`,
+                    hours,
+                    fromHour: from.getUTCHours(),
+                    dateKey: `${from.getUTCFullYear()}${pad(from.getUTCMonth() + 1)}${pad(from.getUTCDate())}`,
+                    label: `${md(from)} ${hm(from)}～${md(to) === md(from) ? '' : md(to) + ' '}${hm(to)}`
+                });
+            }
         });
         return { issueLabel: `${md(issue)} ${hm(issue)}`, periods };
+    }
+
+    // 只取白天 (08～20 時)：有剛好涵蓋整個白天的 12 小時圖就用它，
+    // 否則 (02/14 時起算的發布時次) 改用落在白天內的 6 小時圖
+    function pickDaytimePeriods(info, targetYYYYMMDD) {
+        const sameDay = info.periods.filter(p => p.dateKey === targetYYYYMMDD);
+        const whole = sameDay.filter(p => p.hours === 12 && p.fromHour === CWA_DAY_START);
+        if (whole.length) return whole;
+        return sameDay.filter(p => p.hours === 6 && p.fromHour >= CWA_DAY_START && p.fromHour + 6 <= CWA_DAY_END);
     }
 
     function fetchCwaInfo(callback) {
@@ -311,7 +326,7 @@
         if (typeof GM_xmlhttpRequest !== 'undefined') {
             GM_xmlhttpRequest({
                 method: 'HEAD',
-                url: `${CWA_IMG_BASE}12.png?T=${now}`,
+                url: `${CWA_IMG_BASE}12_12.png?T=${now}`,
                 onload: function (res) {
                     const m = /^last-modified:\s*(.+)$/im.exec(res.responseHeaders || '');
                     handle(res.status === 200 && m ? m[1].trim() : '');
@@ -328,7 +343,7 @@
     }
 
     function renderCwa(info, targetYYYYMMDD) {
-        const periods = info.periods.filter(p => p.dateKey === targetYYYYMMDD);
+        const periods = pickDaytimePeriods(info, targetYYYYMMDD);
         const stamp = Math.floor(Date.now() / 600000);
         cwaColCount = periods.length;
         cardCwa.innerHTML = periods.map(p => `
