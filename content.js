@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    console.log('%c[NCDR Rain Forecast Extension] 擴充功能啟動成功！v1.4.0 (含 ON/OFF 開關)', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
+    console.log('%c[NCDR Rain Forecast Extension] 擴充功能啟動成功！v1.5.0 (含 ON/OFF 開關)', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
 
     let latestRun = null;
     let hoverTimer = null;
@@ -43,11 +43,15 @@
                 <span class="ncdr-badge" id="ncdr-card-badge">NCDR 預報</span>
             </div>
             <div class="ncdr-body">
-                <div class="ncdr-loading" id="ncdr-card-loading">
-                    <div class="ncdr-spinner"></div>
-                    <span id="ncdr-card-status">取得雨量圖中...</span>
+                <div class="ncdr-cwa" id="ncdr-card-cwa"></div>
+                <div class="ncdr-col ncdr-col-main">
+                    <div class="ncdr-caption">NCDR 六週預報</div>
+                    <div class="ncdr-loading" id="ncdr-card-loading">
+                        <div class="ncdr-spinner"></div>
+                        <span id="ncdr-card-status">取得雨量圖中...</span>
+                    </div>
+                    <img id="ncdr-card-img" class="ncdr-img" alt="降雨預報圖" style="display:none;" />
                 </div>
-                <img id="ncdr-card-img" class="ncdr-img" alt="降雨預報圖" style="display:none;" />
             </div>
             <div class="ncdr-footer">
                 <span id="ncdr-card-info">資料來源：國家災害防救科技中心</span>
@@ -62,6 +66,102 @@
     const cardStatus = document.getElementById('ncdr-card-status');
     const cardImg = document.getElementById('ncdr-card-img');
     const cardInfo = document.getElementById('ncdr-card-info');
+    const cardCwa = document.getElementById('ncdr-card-cwa');
+
+    // 中央氣象署定量降水預報 (QPF)：未來 48 小時，每 12 小時一張
+    const CWA_IMG_BASE = 'https://www.cwa.gov.tw/Data/fcst_img/QPF_ChFcstPrecip_12_';
+    const CWA_FILES = ['12', '24', '36', '48'];
+    const TPE_OFFSET = 8 * 3600 * 1000;
+    const COL_WIDTH = 230;
+    let cwaInfo = null;
+    let cwaFetchedAt = 0;
+    let cwaColCount = 0;
+    let cwaIssueText = '';
+    let ncdrInfoText = '資料來源：國家災害防救科技中心';
+    let lastMouse = { x: 0, y: 0 };
+
+    // 氣象署每日 05:30、11:30、17:30、23:30 發布，首張有效時間自 08、14、20、02 時起算；
+    // 由圖檔上傳時間推回各張的有效時段（Date 的 UTC 欄位在此代表臺灣時間）
+    function buildCwaInfo(uploadMs) {
+        const start = new Date(uploadMs + TPE_OFFSET);
+        start.setUTCMinutes(0, 0, 0);
+        do {
+            start.setUTCHours(start.getUTCHours() + 1);
+        } while (start.getUTCHours() % 6 !== 2);
+
+        const pad = n => String(n).padStart(2, '0');
+        const md = d => `${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())}`;
+        const hm = d => `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+        const issue = new Date(start.getTime() - 2.5 * 3600 * 1000);
+        const periods = CWA_FILES.map((file, i) => {
+            const from = new Date(start.getTime() + i * 12 * 3600 * 1000);
+            const to = new Date(from.getTime() + 12 * 3600 * 1000);
+            return {
+                file,
+                dateKey: `${from.getUTCFullYear()}${pad(from.getUTCMonth() + 1)}${pad(from.getUTCDate())}`,
+                label: `${md(from)} ${hm(from)}～${md(to) === md(from) ? '' : md(to) + ' '}${hm(to)}`
+            };
+        });
+        return { issueLabel: `${md(issue)} ${hm(issue)}`, periods };
+    }
+
+    function fetchCwaInfo(callback) {
+        const now = Date.now();
+        if (cwaInfo && (now - cwaFetchedAt < 600 * 1000)) {
+            callback(cwaInfo);
+            return;
+        }
+        const done = function (uploadMs) {
+            cwaInfo = buildCwaInfo(uploadMs);
+            cwaFetchedAt = now;
+            callback(cwaInfo);
+        };
+        // 取不到上傳時間時，以目前時刻推算最近一次發布
+        const fallback = () => done(now - 3.5 * 3600 * 1000);
+        const handle = function (lastModified) {
+            const ms = Date.parse(lastModified || '');
+            if (isNaN(ms)) fallback();
+            else done(ms);
+        };
+        if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
+            chrome.runtime.sendMessage({ action: 'fetchCwaQpfTime' }, (response) => {
+                handle(response && response.success ? response.lastModified : '');
+            });
+        } else {
+            fallback();
+        }
+    }
+
+    function updateFooter() {
+        cardInfo.textContent = [cwaIssueText, ncdrInfoText].filter(Boolean).join('｜');
+    }
+
+    function renderCwa(info, targetYYYYMMDD) {
+        const periods = info.periods.filter(p => p.dateKey === targetYYYYMMDD);
+        const stamp = Math.floor(Date.now() / 600000);
+        cwaColCount = periods.length;
+        cardCwa.innerHTML = periods.map(p => `
+            <div class="ncdr-col">
+                <div class="ncdr-caption">氣象署 ${p.label}</div>
+                <img class="ncdr-img" alt="定量降水預報圖" src="${CWA_IMG_BASE}${p.file}.png?T=${stamp}" />
+            </div>`).join('');
+        cwaIssueText = periods.length ? `氣象署發布：${info.issueLabel}` : '';
+        updateFooter();
+        positionTooltip();
+    }
+
+    function positionTooltip() {
+        const cardWidth = (cwaColCount + 1) * COL_WIDTH + 20;
+        const cardHeight = Math.max(380, tooltip.offsetHeight);
+        let posX = lastMouse.x + 16;
+        let posY = lastMouse.y + 16;
+
+        if (posX + cardWidth > window.innerWidth) posX = lastMouse.x - cardWidth - 16;
+        if (posY + cardHeight > window.innerHeight) posY = lastMouse.y - cardHeight - 16;
+
+        tooltip.style.left = `${Math.max(10, posX)}px`;
+        tooltip.style.top = `${Math.max(10, posY)}px`;
+    }
 
     function getDefaultRun() {
         const now = new Date();
@@ -269,6 +369,14 @@
         cardStatus.textContent = '取得雨量圖中...';
         cardImg.style.display = 'none';
 
+        cwaColCount = 0;
+        cwaIssueText = '';
+        cardCwa.innerHTML = '';
+        lastMouse = { x: mouseX, y: mouseY };
+        fetchCwaInfo((info) => {
+            if (currentHoverDate === targetYYYYMMDD && isEnabled) renderCwa(info, targetYYYYMMDD);
+        });
+
         const candidates = getCandidateRuns();
         let candidateIndex = 0;
 
@@ -287,7 +395,8 @@
             const testImg = new Image();
             testImg.onload = function () {
                 if (currentHoverDate === targetYYYYMMDD && isEnabled) {
-                    cardInfo.textContent = `模式發布：${tryRun.substr(0, 4)}/${tryRun.substr(4, 2)}/${tryRun.substr(6, 2)}`;
+                    ncdrInfoText = `NCDR 模式發布：${tryRun.substr(0, 4)}/${tryRun.substr(4, 2)}/${tryRun.substr(6, 2)}`;
+                    updateFooter();
                     cardImg.src = imgUrl;
                     cardLoading.style.display = 'none';
                     cardImg.style.display = 'block';
@@ -301,16 +410,7 @@
 
         tryNextCandidate();
 
-        const cardWidth = 250;
-        const cardHeight = 360;
-        let posX = mouseX + 16;
-        let posY = mouseY + 16;
-
-        if (posX + cardWidth > window.innerWidth) posX = mouseX - cardWidth - 16;
-        if (posY + cardHeight > window.innerHeight) posY = mouseY - cardHeight - 16;
-
-        tooltip.style.left = `${Math.max(10, posX)}px`;
-        tooltip.style.top = `${Math.max(10, posY)}px`;
+        positionTooltip();
         tooltip.classList.add('visible');
     }
 
@@ -338,12 +438,8 @@
 
         const dateStr = formatDateToYYYYMMDD(targetDate);
         if (dateStr === currentHoverDate) {
-            let posX = e.clientX + 16;
-            let posY = e.clientY + 16;
-            if (posX + 250 > window.innerWidth) posX = e.clientX - 250 - 16;
-            if (posY + 360 > window.innerHeight) posY = e.clientY - 360 - 16;
-            tooltip.style.left = `${Math.max(10, posX)}px`;
-            tooltip.style.top = `${Math.max(10, posY)}px`;
+            lastMouse = { x: e.clientX, y: e.clientY };
+            positionTooltip();
             return;
         }
 

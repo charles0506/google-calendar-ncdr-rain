@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Google 日曆 - NCDR 六週降雨預報懸停卡片",
-  "version": "1.4.0",
-  "description": "在 Google 日曆中，將滑鼠移到任意日期格子上，立即浮現當天 NCDR 全台六週降雨預報圖！",
+  "version": "1.5.0",
+  "description": "在 Google 日曆中，將滑鼠移到任意日期格子上，立即浮現當天 NCDR 全台六週降雨預報圖！近兩天另附中央氣象署定量降水預報。",
   "icons": {
     "16": "icon16.png",
     "48": "icon48.png",
@@ -20,6 +20,7 @@
     }
   ],
   "host_permissions": [
-    "https://watch.ncdr.nat.gov.tw/*"
+    "https://watch.ncdr.nat.gov.tw/*",
+    "https://www.cwa.gov.tw/*"
   ]
 }

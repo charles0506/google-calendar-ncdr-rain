@@ -17,4 +17,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
         return true; // 保持異步通道
     }
+
+    if (request.action === 'fetchCwaQpfTime') {
+        // 氣象署定量降水預報圖的上傳時間，用來推算各張圖的有效時段
+        const url = 'https://www.cwa.gov.tw/Data/fcst_img/QPF_ChFcstPrecip_12_12.png?T=' + Date.now();
+        fetch(url, { method: 'HEAD' })
+            .then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                sendResponse({ success: true, lastModified: res.headers.get('last-modified') });
+            })
+            .catch(err => {
+                sendResponse({ success: false, error: err.toString() });
+            });
+        return true;
+    }
 });
