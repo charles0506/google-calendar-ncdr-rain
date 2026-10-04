@@ -9,6 +9,7 @@
 * 🖱️ **滑鼠懸停即看（Hover Preview）**：在月視圖中滑鼠移到特定日期（例如 9月30日），畫面立即浮出當日降雨預報圖。
 * 🔄 **自動追蹤最新期數**：自動對接 NCDR API，每日動態取得最新模式資料（涵蓋未來 42 天 / 6 週）。
 * 🌦️ **近兩天加掛氣象署定量降水預報**：游標所在日期落在未來 48 小時內時，卡片左側多出中央氣象署白天（08～20 時）的定量降水預報圖。
+* ☔ **今天與前兩天加掛實測雨量**：游標停在今天、昨天或前天時，卡片最左側多出中央氣象署日累積雨量圖（今天為 00:00 累積至最近半小時，過去日期為全日）。
 * ⚡ **防抖動與快取設計**：游標快速滑過不閃爍，期數本機快取 1 小時，載入極速無負擔。
 * 📱 **避邊緣智慧定位**：自動判斷視窗邊緣，卡片絕不超出螢幕。
 * 🐒 **支援雙棲安裝**：提供 Tampermonkey 竄改猴腳本 與 Chrome 擴充套件雙版本。
@@ -55,6 +56,7 @@ google-calendar-ncdr-rain/
 
 * 國家災害防救科技中心（NCDR）氣象組
 * 中央氣象署定量降水預報：[https://www.cwa.gov.tw/V8/C/P/QPF.html](https://www.cwa.gov.tw/V8/C/P/QPF.html)
+* 中央氣象署日累積雨量圖：[https://www.cwa.gov.tw/V8/C/P/Rainfall/Rainfall_QZJ.html](https://www.cwa.gov.tw/V8/C/P/Rainfall/Rainfall_QZJ.html)
 * 氣候降雨展望：[https://watch.ncdr.nat.gov.tw/watch_rain_6weeks](https://watch.ncdr.nat.gov.tw/watch_rain_6weeks)
 
 ## 📄 授權條款

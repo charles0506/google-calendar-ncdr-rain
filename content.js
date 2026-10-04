@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    console.log('%c[NCDR Rain Forecast Extension] 擴充功能啟動成功！v1.5.1 (含 ON/OFF 開關)', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
+    console.log('%c[NCDR Rain Forecast Extension] 擴充功能啟動成功！v1.6.0 (含 ON/OFF 開關)', 'background: #1976d2; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold;');
 
     let latestRun = null;
     let hoverTimer = null;
@@ -43,6 +43,7 @@
                 <span class="ncdr-badge" id="ncdr-card-badge">NCDR 預報</span>
             </div>
             <div class="ncdr-body">
+                <div class="ncdr-cwa" id="ncdr-card-obs"></div>
                 <div class="ncdr-cwa" id="ncdr-card-cwa"></div>
                 <div class="ncdr-col ncdr-col-main">
                     <div class="ncdr-caption">NCDR 六週預報</div>
@@ -67,6 +68,7 @@
     const cardImg = document.getElementById('ncdr-card-img');
     const cardInfo = document.getElementById('ncdr-card-info');
     const cardCwa = document.getElementById('ncdr-card-cwa');
+    const cardObs = document.getElementById('ncdr-card-obs');
 
     // 中央氣象署定量降水預報 (QPF)：未來 48 小時，有 12 小時一張與 6 小時一張兩組圖
     const CWA_IMG_BASE = 'https://www.cwa.gov.tw/Data/fcst_img/QPF_ChFcstPrecip_';
@@ -77,6 +79,7 @@
     let cwaInfo = null;
     let cwaFetchedAt = 0;
     let cwaColCount = 0;
+    let obsColCount = 0;
     let cwaIssueText = '';
     let ncdrInfoText = '資料來源：國家災害防救科技中心';
     let lastMouse = { x: 0, y: 0 };
@@ -157,7 +160,7 @@
         cwaColCount = periods.length;
         cardCwa.innerHTML = periods.map(p => `
             <div class="ncdr-col">
-                <div class="ncdr-caption">氣象署 ${p.label}</div>
+                <div class="ncdr-caption">氣象署預報 ${p.label}</div>
                 <img class="ncdr-img" alt="定量降水預報圖" src="${CWA_IMG_BASE}${p.file}.png?T=${stamp}" />
             </div>`).join('');
         cwaIssueText = periods.length ? `氣象署發布：${info.issueLabel}` : '';
@@ -165,8 +168,74 @@
         positionTooltip();
     }
 
+    // 中央氣象署日累積雨量圖 (實測)：過去的日期用隔日 00:00 的全日圖，今天用最近的半小時圖
+    const CWA_OBS_BASE = 'https://www.cwa.gov.tw/Data/rainfall/';
+    const CWA_OBS_DAYS_BACK = 2;
+
+    function getObservedCandidates(targetYYYYMMDD) {
+        const pad = n => String(n).padStart(2, '0');
+        const key = d => `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}`;
+        const fileDate = d => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+        const now = new Date(Date.now() + TPE_OFFSET);
+        const target = new Date(Date.UTC(
+            parseInt(targetYYYYMMDD.substr(0, 4), 10),
+            parseInt(targetYYYYMMDD.substr(4, 2), 10) - 1,
+            parseInt(targetYYYYMMDD.substr(6, 2), 10)
+        ));
+        const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const daysBack = Math.round((today.getTime() - target.getTime()) / (86400 * 1000));
+        if (daysBack < 0 || daysBack > CWA_OBS_DAYS_BACK) return [];
+
+        const md = `${pad(target.getUTCMonth() + 1)}/${pad(target.getUTCDate())}`;
+        if (daysBack > 0) {
+            const next = new Date(target.getTime() + 86400 * 1000);
+            return [{ file: `${fileDate(next)}_0000`, label: `${md} 全日` }];
+        }
+
+        // 圖檔約晚幾分鐘上架，往回多試幾個半小時
+        const candidates = [];
+        const slot = new Date(now);
+        slot.setUTCMinutes(now.getUTCMinutes() < 30 ? 0 : 30, 0, 0);
+        for (let i = 0; i < 4; i++) {
+            const t = new Date(slot.getTime() - i * 1800 * 1000);
+            if (key(t) !== targetYYYYMMDD || (t.getUTCHours() === 0 && t.getUTCMinutes() === 0)) break;
+            const hhmm = `${pad(t.getUTCHours())}${pad(t.getUTCMinutes())}`;
+            candidates.push({
+                file: `${fileDate(t)}_${hhmm}`,
+                label: `${md} 00:00～${hhmm.substr(0, 2)}:${hhmm.substr(2)}`
+            });
+        }
+        return candidates;
+    }
+
+    function renderObserved(targetYYYYMMDD) {
+        const candidates = getObservedCandidates(targetYYYYMMDD);
+        let index = 0;
+
+        function tryNext() {
+            if (index >= candidates.length) return;
+            const c = candidates[index++];
+            const imgUrl = `${CWA_OBS_BASE}${c.file}.QZJ8.jpg`;
+            const testImg = new Image();
+            testImg.onload = function () {
+                if (currentHoverDate !== targetYYYYMMDD || !isEnabled) return;
+                obsColCount = 1;
+                cardObs.innerHTML = `
+            <div class="ncdr-col">
+                <div class="ncdr-caption">氣象署實測 ${c.label}</div>
+                <img class="ncdr-img" alt="日累積雨量圖" src="${imgUrl}" />
+            </div>`;
+                positionTooltip();
+            };
+            testImg.onerror = tryNext;
+            testImg.src = imgUrl;
+        }
+
+        tryNext();
+    }
+
     function positionTooltip() {
-        const cardWidth = (cwaColCount + 1) * COL_WIDTH + 20;
+        const cardWidth = (obsColCount + cwaColCount + 1) * COL_WIDTH + 20;
         const cardHeight = Math.max(380, tooltip.offsetHeight);
         let posX = lastMouse.x + 16;
         let posY = lastMouse.y + 16;
@@ -385,8 +454,11 @@
         cardImg.style.display = 'none';
 
         cwaColCount = 0;
+        obsColCount = 0;
         cwaIssueText = '';
         cardCwa.innerHTML = '';
+        cardObs.innerHTML = '';
+        renderObserved(targetYYYYMMDD);
         lastMouse = { x: mouseX, y: mouseY };
         fetchCwaInfo((info) => {
             if (currentHoverDate === targetYYYYMMDD && isEnabled) renderCwa(info, targetYYYYMMDD);
